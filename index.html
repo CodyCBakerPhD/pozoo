@@ -36,15 +36,6 @@
             justify-content: center;
         }
 
-        .controls label {
-            font-size: 0.9rem;
-        }
-
-        .controls input[type="range"] {
-            width: 200px;
-            accent-color: #e94560;
-        }
-
         .controls button {
             padding: 8px 18px;
             border: none;
@@ -60,7 +51,7 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
 
-        #captureBtn {
+        #newFrameBtn {
             background: #e94560;
             color: white;
         }
@@ -76,6 +67,15 @@
             color: white;
         }
 
+        .frame-info {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #aaa;
+            padding: 4px 12px;
+            background: #0a0a1a;
+            border-radius: 4px;
+        }
+
         .main-container {
             display: flex;
             gap: 20px;
@@ -84,19 +84,6 @@
             justify-content: center;
             width: 100%;
             max-width: 1200px;
-        }
-
-        .video-section {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .video-section video {
-            max-width: 480px;
-            width: 100%;
-            border-radius: 8px;
-            border: 2px solid #0f3460;
         }
 
         .canvas-container {
@@ -266,6 +253,18 @@
             font-family: monospace;
         }
 
+        .server-config input[type="number"] {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid #0f3460;
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-size: 0.8rem;
+            font-family: monospace;
+            margin-bottom: 8px;
+        }
+
         #statusMsg {
             margin-top: 10px;
             padding: 8px;
@@ -304,13 +303,6 @@
             line-height: 1.4;
         }
 
-        .frame-indicator {
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #e94560;
-            min-width: 60px;
-        }
-
         .loading-overlay {
             position: absolute;
             top: 0;
@@ -325,6 +317,15 @@
             font-size: 1rem;
             border-radius: 8px;
             z-index: 20;
+        }
+
+        .loading-fullscreen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1rem;
+            padding: 40px;
         }
 
         .spinner {
@@ -346,32 +347,34 @@
 
     <h1>🎯 Video Frame Labeler</h1>
     <p class="instructions">
-        Seek through the video, capture a frame, then click on the image to place labels.
-        Click a label in the sidebar to select it, then click on the frame to place it. Drag to reposition.
+        A random frame is automatically loaded. Click a label in the sidebar to select it,
+        then click on the frame to place it. Drag placed dots to reposition.
     </p>
 
     <div class="controls">
-        <label>Seek: </label>
-        <input type="range" id="seekBar" min="0" max="100" step="0.1" value="0">
-        <span class="frame-indicator" id="timeDisplay">0.0s</span>
-        <button id="captureBtn">📸 Capture Frame</button>
+        <span class="frame-info" id="frameInfo">Loading...</span>
+        <button id="newFrameBtn">🎲 New Random Frame</button>
         <button id="resetBtn">🔄 Reset Labels</button>
         <button id="submitBtn">📤 Submit Labels</button>
     </div>
 
-    <div class="main-container">
-        <div class="video-section">
-            <video id="video" crossorigin="anonymous" preload="auto" muted>
-                <source src="https://ember-open-data.s3.amazonaws.com/blobs/59e/7d8/59e7d85b-6827-4e62-977a-bab97c54df82" type="video/mp4">
-                Your browser does not support the video element.
-            </video>
+    <!-- Hidden video element used only for extraction -->
+    <video id="video" crossorigin="anonymous" preload="auto" muted style="display:none;">
+        <source src="https://ember-open-data.s3.amazonaws.com/blobs/59e/7d8/59e7d85b-6827-4e62-977a-bab97c54df82" type="video/mp4">
+    </video>
 
+    <div class="main-container">
+        <div>
             <div class="canvas-container" id="canvasContainer" style="display:none;">
                 <canvas id="frameCanvas"></canvas>
                 <div class="loading-overlay" id="loadingOverlay" style="display:none;">
                     <div class="spinner"></div>
-                    Loading...
+                    Extracting frame...
                 </div>
+            </div>
+            <div class="loading-fullscreen" id="initialLoading">
+                <div class="spinner"></div>
+                Loading video &amp; extracting random frame...
             </div>
         </div>
 
@@ -380,6 +383,8 @@
             <div class="label-palette" id="labelPalette"></div>
 
             <div class="server-config">
+                <label for="fpsInput">Video FPS (for frame index):</label>
+                <input type="number" id="fpsInput" value="30" min="1" max="240" step="any">
                 <label for="serverUrl">Server Endpoint:</label>
                 <input type="text" id="serverUrl" value="https://your-server.com/api/labels" placeholder="https://your-server.com/api/labels">
             </div>
@@ -395,7 +400,7 @@
 
     <script>
         // ============================================================
-        // Configuration: Define your labels here
+        // Configuration
         // ============================================================
         const LABEL_DEFINITIONS = [
             { id: 'left_front_paw',   name: 'Left Front Paw',   color: '#ff4444' },
@@ -412,41 +417,70 @@
         // State
         // ============================================================
         const state = {
-            labels: {},           // { labelId: { x, y, pixelX, pixelY, element } }
-            activeLabel: null,    // currently selected label id
+            labels: {},
+            activeLabel: null,
             frameCaptured: false,
             frameTime: 0,
+            frameIndex: 0,
+            totalFrames: 0,
             imageWidth: 0,
             imageHeight: 0,
             canvasDisplayWidth: 0,
             canvasDisplayHeight: 0,
             dragging: null,
             dragOffset: { x: 0, y: 0 },
+            justDragged: false,
         };
 
         // ============================================================
         // DOM Elements
         // ============================================================
         const video = document.getElementById('video');
-        const seekBar = document.getElementById('seekBar');
-        const timeDisplay = document.getElementById('timeDisplay');
-        const captureBtn = document.getElementById('captureBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const submitBtn = document.getElementById('submitBtn');
         const canvas = document.getElementById('frameCanvas');
         const ctx = canvas.getContext('2d');
         const canvasContainer = document.getElementById('canvasContainer');
         const labelPalette = document.getElementById('labelPalette');
         const jsonOutput = document.getElementById('jsonOutput');
         const serverUrlInput = document.getElementById('serverUrl');
+        const fpsInput = document.getElementById('fpsInput');
         const statusMsg = document.getElementById('statusMsg');
         const loadingOverlay = document.getElementById('loadingOverlay');
+        const initialLoading = document.getElementById('initialLoading');
+        const frameInfo = document.getElementById('frameInfo');
+        const newFrameBtn = document.getElementById('newFrameBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // ============================================================
+        // FPS & frame index helpers
+        // ============================================================
+        function getFPS() {
+            return parseFloat(fpsInput.value) || 30;
+        }
+
+        function timeToFrame(timeSec) {
+            return Math.round(timeSec * getFPS());
+        }
+
+        function totalFrameCount(durationSec) {
+            return Math.floor(durationSec * getFPS());
+        }
+
+        // Recalculate display when FPS changes
+        fpsInput.addEventListener('change', () => {
+            if (state.frameCaptured) {
+                state.frameIndex = timeToFrame(state.frameTime);
+                state.totalFrames = totalFrameCount(video.duration);
+                frameInfo.textContent = `Frame ${state.frameIndex} / ${state.totalFrames}  (${state.imageWidth}×${state.imageHeight} @ ${getFPS()} fps)`;
+                updateJSON();
+            }
+        });
 
         // ============================================================
         // Initialize label palette
         // ============================================================
         function initPalette() {
-            LABEL_DEFINITIONS.forEach((def, idx) => {
+            LABEL_DEFINITIONS.forEach(def => {
                 const item = document.createElement('div');
                 item.className = 'label-item';
                 item.dataset.labelId = def.id;
@@ -459,8 +493,6 @@
                 item.addEventListener('click', () => selectLabel(def.id));
                 labelPalette.appendChild(item);
             });
-
-            // Select first label by default
             if (LABEL_DEFINITIONS.length > 0) {
                 selectLabel(LABEL_DEFINITIONS[0].id);
             }
@@ -474,71 +506,103 @@
         }
 
         // ============================================================
-        // Video seeking
+        // Random frame extraction
+        // ============================================================
+        function seekToRandomFrame() {
+            return new Promise((resolve, reject) => {
+                if (!video.duration || video.duration === Infinity || isNaN(video.duration)) {
+                    reject(new Error('Video duration not available'));
+                    return;
+                }
+
+                const fps = getFPS();
+                const total = totalFrameCount(video.duration);
+                const randomFrameIdx = Math.floor(Math.random() * total);
+                const targetTime = randomFrameIdx / fps;
+
+                const onSeeked = () => {
+                    video.removeEventListener('seeked', onSeeked);
+                    resolve({ frameIndex: randomFrameIdx, time: targetTime, totalFrames: total });
+                };
+
+                video.addEventListener('seeked', onSeeked);
+                video.currentTime = targetTime;
+            });
+        }
+
+        async function loadRandomFrame() {
+            loadingOverlay.style.display = 'flex';
+            frameInfo.textContent = 'Seeking...';
+
+            try {
+                const { frameIndex, time, totalFrames } = await seekToRandomFrame();
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                state.imageWidth = video.videoWidth;
+                state.imageHeight = video.videoHeight;
+
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                const maxDisplayWidth = 640;
+                const scale = Math.min(maxDisplayWidth / canvas.width, 1);
+                canvas.style.width = (canvas.width * scale) + 'px';
+                canvas.style.height = (canvas.height * scale) + 'px';
+                state.canvasDisplayWidth = canvas.width * scale;
+                state.canvasDisplayHeight = canvas.height * scale;
+
+                state.frameCaptured = true;
+                state.frameTime = time;
+                state.frameIndex = frameIndex;
+                state.totalFrames = totalFrames;
+
+                clearAllLabels();
+                updateJSON();
+
+                canvasContainer.style.display = 'inline-block';
+                initialLoading.style.display = 'none';
+                loadingOverlay.style.display = 'none';
+
+                frameInfo.textContent = `Frame ${frameIndex} / ${totalFrames}  (${state.imageWidth}×${state.imageHeight} @ ${getFPS()} fps)`;
+            } catch (err) {
+                loadingOverlay.style.display = 'none';
+                showStatus('error', 'Failed to extract frame: ' + err.message);
+            }
+        }
+
+        // ============================================================
+        // Video load → auto-extract
         // ============================================================
         video.addEventListener('loadedmetadata', () => {
-            seekBar.max = video.duration;
-            timeDisplay.textContent = '0.0s';
-        });
-
-        video.addEventListener('error', (e) => {
-            console.error('Video loading error:', e);
-            showStatus('error', 'Failed to load video. Check the URL or CORS settings.');
-        });
-
-        seekBar.addEventListener('input', () => {
-            const t = parseFloat(seekBar.value);
-            video.currentTime = t;
-            timeDisplay.textContent = t.toFixed(1) + 's';
-        });
-
-        // ============================================================
-        // Frame capture
-        // ============================================================
-        captureBtn.addEventListener('click', () => {
-            if (!video.videoWidth) {
-                showStatus('error', 'Video not loaded yet. Please wait.');
-                return;
+            // Some videos need a small seek to report correct dimensions
+            // Wait for enough data
+            if (video.readyState >= 2) {
+                loadRandomFrame();
             }
-
-            loadingOverlay.style.display = 'flex';
-            canvasContainer.style.display = 'inline-block';
-            video.style.display = 'none';
-
-            // Draw at native resolution
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-
-            state.imageWidth = video.videoWidth;
-            state.imageHeight = video.videoHeight;
-
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // Set display size (capped)
-            const maxDisplayWidth = 640;
-            const scale = Math.min(maxDisplayWidth / canvas.width, 1);
-            canvas.style.width = (canvas.width * scale) + 'px';
-            canvas.style.height = (canvas.height * scale) + 'px';
-
-            state.canvasDisplayWidth = canvas.width * scale;
-            state.canvasDisplayHeight = canvas.height * scale;
-
-            state.frameCaptured = true;
-            state.frameTime = video.currentTime;
-
-            // Clear existing labels
-            clearAllLabels();
-
-            loadingOverlay.style.display = 'none';
-            showStatus('info', `Frame captured at t=${state.frameTime.toFixed(2)}s (${state.imageWidth}×${state.imageHeight})`);
         });
+
+        video.addEventListener('loadeddata', () => {
+            if (!state.frameCaptured) {
+                loadRandomFrame();
+            }
+        });
+
+        video.addEventListener('error', () => {
+            initialLoading.innerHTML = '❌ Failed to load video. Check URL / CORS.';
+            showStatus('error', 'Video failed to load.');
+        });
+
+        newFrameBtn.addEventListener('click', loadRandomFrame);
 
         // ============================================================
         // Place labels on click
         // ============================================================
         canvasContainer.addEventListener('click', (e) => {
             if (!state.frameCaptured || !state.activeLabel) return;
-            if (state.dragging) return; // ignore clicks during drag
+            if (state.justDragged) {
+                state.justDragged = false;
+                return;
+            }
 
             const rect = canvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -546,8 +610,6 @@
 
             placeLabel(state.activeLabel, clickX, clickY);
             updateJSON();
-
-            // Auto-advance to next unplaced label
             autoAdvanceLabel();
         });
 
@@ -555,24 +617,17 @@
             const def = LABEL_DEFINITIONS.find(d => d.id === labelId);
             if (!def) return;
 
-            // Calculate pixel coordinates in original image
             const scaleX = state.imageWidth / state.canvasDisplayWidth;
             const scaleY = state.imageHeight / state.canvasDisplayHeight;
-            const pixelX = Math.round(displayX * scaleX);
-            const pixelY = Math.round(displayY * scaleY);
+            const pixelX = Math.max(0, Math.min(state.imageWidth - 1, Math.round(displayX * scaleX)));
+            const pixelY = Math.max(0, Math.min(state.imageHeight - 1, Math.round(displayY * scaleY)));
+            const clampedDisplayX = pixelX / scaleX;
+            const clampedDisplayY = pixelY / scaleY;
 
-            // Clamp
-            const clampedPixelX = Math.max(0, Math.min(state.imageWidth - 1, pixelX));
-            const clampedPixelY = Math.max(0, Math.min(state.imageHeight - 1, pixelY));
-            const clampedDisplayX = clampedPixelX / scaleX;
-            const clampedDisplayY = clampedPixelY / scaleY;
-
-            // Remove old dot if exists
             if (state.labels[labelId] && state.labels[labelId].element) {
                 state.labels[labelId].element.remove();
             }
 
-            // Create dot element
             const dot = document.createElement('div');
             dot.className = 'label-dot';
             dot.style.backgroundColor = def.color;
@@ -587,20 +642,17 @@
 
             canvasContainer.appendChild(dot);
 
-            // Store state
             state.labels[labelId] = {
                 displayX: clampedDisplayX,
                 displayY: clampedDisplayY,
-                pixelX: clampedPixelX,
-                pixelY: clampedPixelY,
+                pixelX,
+                pixelY,
                 element: dot,
             };
 
-            // Update sidebar
-            document.getElementById(`coords-${labelId}`).textContent = `(${clampedPixelX}, ${clampedPixelY})`;
+            document.getElementById(`coords-${labelId}`).textContent = `(${pixelX}, ${pixelY})`;
             document.getElementById(`status-${labelId}`).textContent = '●';
 
-            // Make draggable
             dot.addEventListener('mousedown', startDrag);
             dot.addEventListener('touchstart', startDrag, { passive: false });
         }
@@ -618,7 +670,7 @@
         }
 
         // ============================================================
-        // Drag-and-drop repositioning
+        // Drag-and-drop
         // ============================================================
         function startDrag(e) {
             e.preventDefault();
@@ -636,41 +688,36 @@
 
             const dotLeft = parseFloat(dot.style.left);
             const dotTop = parseFloat(dot.style.top);
-
             state.dragOffset = {
                 x: clientX - rect.left - dotLeft,
                 y: clientY - rect.top - dotTop,
             };
 
+            let moved = false;
+
             const onMove = (ev) => {
                 ev.preventDefault();
+                moved = true;
                 const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
                 const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
 
-                let newDisplayX = cx - rect.left - state.dragOffset.x;
-                let newDisplayY = cy - rect.top - state.dragOffset.y;
-
-                // Clamp to canvas
-                newDisplayX = Math.max(0, Math.min(state.canvasDisplayWidth, newDisplayX));
-                newDisplayY = Math.max(0, Math.min(state.canvasDisplayHeight, newDisplayY));
+                let newDisplayX = Math.max(0, Math.min(state.canvasDisplayWidth, cx - rect.left - state.dragOffset.x));
+                let newDisplayY = Math.max(0, Math.min(state.canvasDisplayHeight, cy - rect.top - state.dragOffset.y));
 
                 dot.style.left = newDisplayX + 'px';
                 dot.style.top = newDisplayY + 'px';
 
-                // Update pixel coords
                 const scaleX = state.imageWidth / state.canvasDisplayWidth;
                 const scaleY = state.imageHeight / state.canvasDisplayHeight;
-                const px = Math.round(newDisplayX * scaleX);
-                const py = Math.round(newDisplayY * scaleY);
+                const px = Math.max(0, Math.min(state.imageWidth - 1, Math.round(newDisplayX * scaleX)));
+                const py = Math.max(0, Math.min(state.imageHeight - 1, Math.round(newDisplayY * scaleY)));
 
                 state.labels[labelId].displayX = newDisplayX;
                 state.labels[labelId].displayY = newDisplayY;
-                state.labels[labelId].pixelX = Math.max(0, Math.min(state.imageWidth - 1, px));
-                state.labels[labelId].pixelY = Math.max(0, Math.min(state.imageHeight - 1, py));
+                state.labels[labelId].pixelX = px;
+                state.labels[labelId].pixelY = py;
 
-                document.getElementById(`coords-${labelId}`).textContent =
-                    `(${state.labels[labelId].pixelX}, ${state.labels[labelId].pixelY})`;
-
+                document.getElementById(`coords-${labelId}`).textContent = `(${px}, ${py})`;
                 updateJSON();
             };
 
@@ -681,9 +728,9 @@
                 document.removeEventListener('mouseup', onEnd);
                 document.removeEventListener('touchmove', onMove);
                 document.removeEventListener('touchend', onEnd);
-
-                // Prevent the click from firing after drag
-                setTimeout(() => {}, 0);
+                if (moved) {
+                    state.justDragged = true;
+                }
             };
 
             document.addEventListener('mousemove', onMove);
@@ -698,20 +745,15 @@
         resetBtn.addEventListener('click', () => {
             clearAllLabels();
             updateJSON();
-            if (LABEL_DEFINITIONS.length > 0) {
-                selectLabel(LABEL_DEFINITIONS[0].id);
-            }
+            if (LABEL_DEFINITIONS.length > 0) selectLabel(LABEL_DEFINITIONS[0].id);
             showStatus('info', 'Labels cleared.');
         });
 
         function clearAllLabels() {
             Object.keys(state.labels).forEach(id => {
-                if (state.labels[id].element) {
-                    state.labels[id].element.remove();
-                }
+                if (state.labels[id].element) state.labels[id].element.remove();
             });
             state.labels = {};
-
             LABEL_DEFINITIONS.forEach(def => {
                 document.getElementById(`coords-${def.id}`).textContent = '—';
                 document.getElementById(`status-${def.id}`).textContent = '○';
@@ -719,7 +761,7 @@
         }
 
         // ============================================================
-        // JSON generation
+        // JSON
         // ============================================================
         function buildPayload() {
             const labels = LABEL_DEFINITIONS.map(def => {
@@ -735,21 +777,22 @@
 
             return {
                 video_url: VIDEO_URL,
-                frame_time_seconds: state.frameTime,
+                frame_index: state.frameIndex,
+                total_frames: state.totalFrames,
+                fps: getFPS(),
                 frame_width: state.imageWidth,
                 frame_height: state.imageHeight,
                 timestamp: new Date().toISOString(),
-                labels: labels,
+                labels,
             };
         }
 
         function updateJSON() {
-            const payload = buildPayload();
-            jsonOutput.textContent = JSON.stringify(payload, null, 2);
+            jsonOutput.textContent = JSON.stringify(buildPayload(), null, 2);
         }
 
         // ============================================================
-        // Submit to server
+        // Submit
         // ============================================================
         submitBtn.addEventListener('click', async () => {
             const placedCount = Object.keys(state.labels).length;
@@ -770,37 +813,31 @@
             try {
                 const response = await fetch(url, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
 
                 if (response.ok) {
                     const respText = await response.text();
-                    showStatus('success', `✅ Submitted successfully! Server responded: ${response.status}. ${respText.substring(0, 100)}`);
+                    showStatus('success', `✅ Submitted! Server: ${response.status}. ${respText.substring(0, 100)}`);
                 } else {
                     showStatus('error', `❌ Server returned ${response.status}: ${response.statusText}`);
                 }
             } catch (err) {
                 showStatus('error', `❌ Network error: ${err.message}`);
-                console.error('Submit error:', err);
             }
         });
 
         // ============================================================
-        // Status message helper
+        // Status helper
         // ============================================================
         function showStatus(type, message) {
             statusMsg.className = type;
             statusMsg.textContent = message;
             statusMsg.style.display = 'block';
-
-            if (type === 'success' || type === 'info') {
+            if (type !== 'error') {
                 setTimeout(() => {
-                    if (statusMsg.textContent === message) {
-                        statusMsg.style.display = 'none';
-                    }
+                    if (statusMsg.textContent === message) statusMsg.style.display = 'none';
                 }, 5000);
             }
         }
