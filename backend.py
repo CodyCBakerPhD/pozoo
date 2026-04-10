@@ -439,37 +439,6 @@ def save_and_push(data: dict) -> dict:
         "pushed_at": now_utc,
     }
 
-
-class Config:
-    # GitHub settings
-    GITHUB_REPO_URL = os.environ.get(
-        "GITHUB_REPO_URL", "https://{token}@github.com/yourusername/yourrepo.git"
-    )
-    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "ghp_xxxxxxxxxxxxxxxxxxxx")
-    GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "yourusername")
-    GITHUB_EMAIL = os.environ.get("GITHUB_EMAIL", "you@example.com")
-    GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
-
-    # Paths
-    # PythonAnywhere home directory
-    HOME_DIR = os.path.expanduser("~")
-    REPO_DIR = os.path.join(HOME_DIR, "label-data-repo")
-    DATA_SUBDIR = "annotations"  # subdirectory inside the repo for JSON files
-
-    # Validation
-    REQUIRED_LABEL_IDS = {
-        "left_front_paw",
-        "right_front_paw",
-        "left_hind_paw",
-        "right_hind_paw",
-        "nose",
-        "tail_base",
-    }
-
-    # Auth token for incoming requests (optional but recommended)
-    API_SECRET = os.environ.get("API_SECRET", "change-me-to-a-real-secret")
-
-
 def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
     """Run a shell command and return the CompletedProcess."""
     result = subprocess.run(
