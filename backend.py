@@ -1,5 +1,3 @@
-
-
 import json
 import os
 import subprocess
@@ -453,6 +451,7 @@ def save_and_push(data: dict) -> dict:
         "commit_sha": commit_sha,
         "pushed_at": now_utc,
     }
+
 
 # ---------------------------------------------------------------------------
 # Local dev server (PythonAnywhere uses WSGI, so this is only for local dev)
