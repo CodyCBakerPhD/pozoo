@@ -12,12 +12,10 @@ from pathlib import Path
 
 from config import Config
 
-
 """
 Manages the sparse-checkout Git repository and all write / commit / push
 operations.
 """
-
 
 
 """

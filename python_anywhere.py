@@ -451,21 +451,15 @@ Manages the sparse-checkout Git repository and all write / commit / push
 operations.
 """
 
-import json
-import os
-import subprocess
 import hashlib
 from datetime import datetime, timezone
-from pathlib import Path
 
 from config import Config
-
 
 """
 Manages the sparse-checkout Git repository and all write / commit / push
 operations.
 """
-
 
 
 """
@@ -474,7 +468,6 @@ writes it to a sparse-checkout GitHub repo, commits and pushes.
 """
 
 import logging
-import traceback
 from functools import wraps
 
 from flask import Flask, request, jsonify
