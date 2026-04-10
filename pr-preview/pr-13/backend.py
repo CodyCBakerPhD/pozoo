@@ -9,7 +9,7 @@ import logging
 import traceback
 from functools import wraps
 
-from flask import Flask, request
+from flask import Flask, redirect, request
 from flask_restx import Api, Resource, fields
 
 from urllib.parse import urlparse
@@ -44,6 +44,9 @@ annotations_ns = api.namespace(
     path="/api",
     description="Annotation operations",
 )
+
+# Redirect the root URL to the Swagger docs instead of returning 404.
+app.view_functions["root"] = lambda: redirect("/docs/")
 
 
 class ValidationError(Exception):
