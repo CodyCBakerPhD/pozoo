@@ -1,7 +1,4 @@
-"""
-Manages the sparse-checkout Git repository and all write / commit / push
-operations.
-"""
+
 
 import json
 import os
@@ -11,17 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import Config
-
-"""
-Manages the sparse-checkout Git repository and all write / commit / push
-operations.
-"""
-
-
-"""
-PythonAnywhere Flask app — receives annotation JSON, validates it,
-writes it to a sparse-checkout GitHub repo, commits and pushes.
-"""
 
 import logging
 import traceback
@@ -145,14 +131,6 @@ def list_annotations():
 
     files = sorted(f for f in os.listdir(target) if f.endswith(".json"))
     return jsonify({"count": len(files), "files": files})
-
-
-# ---------------------------------------------------------------------------
-# Local dev server (PythonAnywhere uses WSGI, so this is only for local dev)
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
 
 
 def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
@@ -475,3 +453,10 @@ def save_and_push(data: dict) -> dict:
         "commit_sha": commit_sha,
         "pushed_at": now_utc,
     }
+
+# ---------------------------------------------------------------------------
+# Local dev server (PythonAnywhere uses WSGI, so this is only for local dev)
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
