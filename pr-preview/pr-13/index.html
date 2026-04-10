@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Frame Labeler</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 20px 0 10px;
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin: 10px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .controls button {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: transform 0.1s, box-shadow 0.2s;
+        }
+
+        .controls button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        #newFrameBtn {
+            background: #e94560;
+            color: white;
+        }
+
+        #submitBtn {
+            background: #0f3460;
+            color: white;
+            border: 2px solid #e94560;
+        }
+
+        #resetBtn {
+            background: #533483;
+            color: white;
+        }
+
+        .frame-info {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #aaa;
+            padding: 4px 12px;
+            background: #0a0a1a;
+            border-radius: 4px;
+        }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            margin: 15px 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #e94560;
+            background: #000;
+            cursor: crosshair;
+        }
+
+        .canvas-container canvas {
+            display: block;
+        }
+
+        .label-dot {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 3px solid white;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            z-index: 10;
+            box-shadow: 0 0 6px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,0,0,0.3);
+            transition: box-shadow 0.2s;
+        }
+
+        .label-dot:hover {
+            box-shadow: 0 0 12px rgba(255,255,255,0.5), 0 0 0 1px rgba(0,0,0,0.3);
+        }
+
+        .label-dot.dragging {
+            cursor: grabbing;
+            box-shadow: 0 0 16px rgba(255,255,255,0.7);
+        }
+
+        .label-dot .dot-tooltip {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .label-dot:hover .dot-tooltip {
+            opacity: 1;
+        }
+
+        .sidebar {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            min-width: 250px;
+            max-width: 300px;
+        }
+
+        .sidebar h2 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            color: #e94560;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+        }
+
+        .label-palette {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .label-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: #0f3460;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            user-select: none;
+        }
+
+        .label-item:hover {
+            background: #1a4a8a;
+        }
+
+        .label-item.active {
+            outline: 2px solid #e94560;
+            outline-offset: 2px;
+        }
+
+        .label-item .color-swatch {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid white;
+            flex-shrink: 0;
+        }
+
+        .label-item .coords {
+            margin-left: auto;
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        .label-item .status-icon {
+            margin-left: 4px;
+            font-size: 0.8rem;
+        }
+
+        .output-section {
+            margin-top: 10px;
+        }
+
+        .output-section h3 {
+            font-size: 0.95rem;
+            margin-bottom: 8px;
+            color: #e94560;
+        }
+
+        #jsonOutput {
+            background: #0a0a1a;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #00ff88;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .server-config {
+            margin-top: 15px;
+        }
+
+        .server-config label {
+            font-size: 0.8rem;
+            display: block;
+            margin-bottom: 4px;
+            color: #aaa;
+        }
+
+        .server-config input[type="text"] {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid #0f3460;
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+
+        .server-config input[type="number"] {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid #0f3460;
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-size: 0.8rem;
+            font-family: monospace;
+            margin-bottom: 8px;
+        }
+
+        #statusMsg {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            display: none;
+        }
+
+        #statusMsg.success {
+            display: block;
+            background: #0a3d0a;
+            border: 1px solid #00ff88;
+            color: #00ff88;
+        }
+
+        #statusMsg.error {
+            display: block;
+            background: #3d0a0a;
+            border: 1px solid #ff4444;
+            color: #ff4444;
+        }
+
+        #statusMsg.info {
+            display: block;
+            background: #0a1a3d;
+            border: 1px solid #4488ff;
+            color: #4488ff;
+        }
+
+        .instructions {
+            font-size: 0.8rem;
+            color: #888;
+            margin: 10px 0;
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.4;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1rem;
+            border-radius: 8px;
+            z-index: 20;
+        }
+
+        .loading-fullscreen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1rem;
+            padding: 40px;
+        }
+
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #e94560;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🎯 Video Frame Labeler</h1>
+    <p class="instructions">
+        A random frame is automatically loaded. Click a label in the sidebar to select it,
+        then click on the frame to place it. Drag placed dots to reposition.
+    </p>
+
+    <div class="controls">
+        <span class="frame-info" id="frameInfo">Loading...</span>
+        <button id="newFrameBtn">🎲 New Random Frame</button>
+        <button id="resetBtn">🔄 Reset Labels</button>
+        <button id="submitBtn">📤 Submit Labels</button>
+    </div>
+
+    <!-- Hidden video element used only for extraction -->
+    <video id="video" crossorigin="anonymous" preload="auto" muted style="display:none;">
+        <source src="https://ember-open-data.s3.amazonaws.com/blobs/59e/7d8/59e7d85b-6827-4e62-977a-bab97c54df82" type="video/mp4">
+    </video>
+
+    <div class="main-container">
+        <div>
+            <div class="canvas-container" id="canvasContainer" style="display:none;">
+                <canvas id="frameCanvas"></canvas>
+                <div class="loading-overlay" id="loadingOverlay" style="display:none;">
+                    <div class="spinner"></div>
+                    Extracting frame...
+                </div>
+            </div>
+            <div class="loading-fullscreen" id="initialLoading">
+                <div class="spinner"></div>
+                Loading video &amp; extracting random frame...
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <h2>🏷️ Labels</h2>
+            <div class="label-palette" id="labelPalette"></div>
+
+            <div class="server-config">
+                <label for="fpsInput">Video FPS (for frame index):</label>
+                <input type="number" id="fpsInput" value="30" min="1" max="240" step="any">
+                <label for="serverUrl">Server Endpoint:</label>
+                <input type="text" id="serverUrl" value="https://your-server.com/api/labels" placeholder="https://your-server.com/api/labels">
+            </div>
+
+            <div class="output-section">
+                <h3>JSON Preview</h3>
+                <div id="jsonOutput">{ "labels": [] }</div>
+            </div>
+
+            <div id="statusMsg"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // Configuration
+        // ============================================================
+        const LABEL_DEFINITIONS = [
+            { id: 'left_front_paw',   name: 'Left Front Paw',   color: '#ff4444' },
+            { id: 'right_front_paw',  name: 'Right Front Paw',  color: '#44ff44' },
+            { id: 'left_hind_paw',    name: 'Left Hind Paw',    color: '#4488ff' },
+            { id: 'right_hind_paw',   name: 'Right Hind Paw',   color: '#ffaa00' },
+            { id: 'nose',             name: 'Nose',             color: '#ff44ff' },
+            { id: 'tail_base',        name: 'Tail Base',        color: '#44ffff' },
+        ];
+
+        const VIDEO_URL = 'https://ember-open-data.s3.amazonaws.com/blobs/59e/7d8/59e7d85b-6827-4e62-977a-bab97c54df82';
+
+        // ============================================================
+        // State
+        // ============================================================
+        const state = {
+            labels: {},
+            activeLabel: null,
+            frameCaptured: false,
+            frameTime: 0,
+            frameIndex: 0,
+            totalFrames: 0,
+            imageWidth: 0,
+            imageHeight: 0,
+            canvasDisplayWidth: 0,
+            canvasDisplayHeight: 0,
+            dragging: null,
+            dragOffset: { x: 0, y: 0 },
+            justDragged: false,
+        };
+
+        // ============================================================
+        // DOM Elements
+        // ============================================================
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('frameCanvas');
+        const ctx = canvas.getContext('2d');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const labelPalette = document.getElementById('labelPalette');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const serverUrlInput = document.getElementById('serverUrl');
+        const fpsInput = document.getElementById('fpsInput');
+        const statusMsg = document.getElementById('statusMsg');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const initialLoading = document.getElementById('initialLoading');
+        const frameInfo = document.getElementById('frameInfo');
+        const newFrameBtn = document.getElementById('newFrameBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // ============================================================
+        // FPS & frame index helpers
+        // ============================================================
+        function getFPS() {
+            return parseFloat(fpsInput.value) || 30;
+        }
+
+        function timeToFrame(timeSec) {
+            return Math.round(timeSec * getFPS());
+        }
+
+        function totalFrameCount(durationSec) {
+            return Math.floor(durationSec * getFPS());
+        }
+
+        // Recalculate display when FPS changes
+        fpsInput.addEventListener('change', () => {
+            if (state.frameCaptured) {
+                state.frameIndex = timeToFrame(state.frameTime);
+                state.totalFrames = totalFrameCount(video.duration);
+                frameInfo.textContent = `Frame ${state.frameIndex} / ${state.totalFrames}  (${state.imageWidth}×${state.imageHeight} @ ${getFPS()} fps)`;
+                updateJSON();
+            }
+        });
+
+        // ============================================================
+        // Initialize label palette
+        // ============================================================
+        function initPalette() {
+            LABEL_DEFINITIONS.forEach(def => {
+                const item = document.createElement('div');
+                item.className = 'label-item';
+                item.dataset.labelId = def.id;
+                item.innerHTML = `
+                    <div class="color-swatch" style="background:${def.color}"></div>
+                    <span>${def.name}</span>
+                    <span class="coords" id="coords-${def.id}">—</span>
+                    <span class="status-icon" id="status-${def.id}">○</span>
+                `;
+                item.addEventListener('click', () => selectLabel(def.id));
+                labelPalette.appendChild(item);
+            });
+            if (LABEL_DEFINITIONS.length > 0) {
+                selectLabel(LABEL_DEFINITIONS[0].id);
+            }
+        }
+
+        function selectLabel(labelId) {
+            state.activeLabel = labelId;
+            document.querySelectorAll('.label-item').forEach(el => {
+                el.classList.toggle('active', el.dataset.labelId === labelId);
+            });
+        }
+
+        // ============================================================
+        // Random frame extraction
+        // ============================================================
+        function seekToRandomFrame() {
+            return new Promise((resolve, reject) => {
+                if (!video.duration || video.duration === Infinity || isNaN(video.duration)) {
+                    reject(new Error('Video duration not available'));
+                    return;
+                }
+
+                const fps = getFPS();
+                const total = totalFrameCount(video.duration);
+                const randomFrameIdx = Math.floor(Math.random() * total);
+                const targetTime = randomFrameIdx / fps;
+
+                const onSeeked = () => {
+                    video.removeEventListener('seeked', onSeeked);
+                    resolve({ frameIndex: randomFrameIdx, time: targetTime, totalFrames: total });
+                };
+
+                video.addEventListener('seeked', onSeeked);
+                video.currentTime = targetTime;
+            });
+        }
+
+        async function loadRandomFrame() {
+            loadingOverlay.style.display = 'flex';
+            frameInfo.textContent = 'Seeking...';
+
+            try {
+                const { frameIndex, time, totalFrames } = await seekToRandomFrame();
+
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                state.imageWidth = video.videoWidth;
+                state.imageHeight = video.videoHeight;
+
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                const maxDisplayWidth = 640;
+                const scale = Math.min(maxDisplayWidth / canvas.width, 1);
+                canvas.style.width = (canvas.width * scale) + 'px';
+                canvas.style.height = (canvas.height * scale) + 'px';
+                state.canvasDisplayWidth = canvas.width * scale;
+                state.canvasDisplayHeight = canvas.height * scale;
+
+                state.frameCaptured = true;
+                state.frameTime = time;
+                state.frameIndex = frameIndex;
+                state.totalFrames = totalFrames;
+
+                clearAllLabels();
+                updateJSON();
+
+                canvasContainer.style.display = 'inline-block';
+                initialLoading.style.display = 'none';
+                loadingOverlay.style.display = 'none';
+
+                frameInfo.textContent = `Frame ${frameIndex} / ${totalFrames}  (${state.imageWidth}×${state.imageHeight} @ ${getFPS()} fps)`;
+            } catch (err) {
+                loadingOverlay.style.display = 'none';
+                showStatus('error', 'Failed to extract frame: ' + err.message);
+            }
+        }
+
+        // ============================================================
+        // Video load → auto-extract
+        // ============================================================
+        video.addEventListener('loadedmetadata', () => {
+            // Some videos need a small seek to report correct dimensions
+            // Wait for enough data
+            if (video.readyState >= 2) {
+                loadRandomFrame();
+            }
+        });
+
+        video.addEventListener('loadeddata', () => {
+            if (!state.frameCaptured) {
+                loadRandomFrame();
+            }
+        });
+
+        video.addEventListener('error', () => {
+            initialLoading.innerHTML = '❌ Failed to load video. Check URL / CORS.';
+            showStatus('error', 'Video failed to load.');
+        });
+
+        newFrameBtn.addEventListener('click', loadRandomFrame);
+
+        // ============================================================
+        // Place labels on click
+        // ============================================================
+        canvasContainer.addEventListener('click', (e) => {
+            if (!state.frameCaptured || !state.activeLabel) return;
+            if (state.justDragged) {
+                state.justDragged = false;
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            placeLabel(state.activeLabel, clickX, clickY);
+            updateJSON();
+            autoAdvanceLabel();
+        });
+
+        function placeLabel(labelId, displayX, displayY) {
+            const def = LABEL_DEFINITIONS.find(d => d.id === labelId);
+            if (!def) return;
+
+            const scaleX = state.imageWidth / state.canvasDisplayWidth;
+            const scaleY = state.imageHeight / state.canvasDisplayHeight;
+            const pixelX = Math.max(0, Math.min(state.imageWidth - 1, Math.round(displayX * scaleX)));
+            const pixelY = Math.max(0, Math.min(state.imageHeight - 1, Math.round(displayY * scaleY)));
+            const clampedDisplayX = pixelX / scaleX;
+            const clampedDisplayY = pixelY / scaleY;
+
+            if (state.labels[labelId] && state.labels[labelId].element) {
+                state.labels[labelId].element.remove();
+            }
+
+            const dot = document.createElement('div');
+            dot.className = 'label-dot';
+            dot.style.backgroundColor = def.color;
+            dot.style.left = clampedDisplayX + 'px';
+            dot.style.top = clampedDisplayY + 'px';
+            dot.dataset.labelId = labelId;
+
+            const tooltip = document.createElement('div');
+            tooltip.className = 'dot-tooltip';
+            tooltip.textContent = def.name;
+            dot.appendChild(tooltip);
+
+            canvasContainer.appendChild(dot);
+
+            state.labels[labelId] = {
+                displayX: clampedDisplayX,
+                displayY: clampedDisplayY,
+                pixelX,
+                pixelY,
+                element: dot,
+            };
+
+            document.getElementById(`coords-${labelId}`).textContent = `(${pixelX}, ${pixelY})`;
+            document.getElementById(`status-${labelId}`).textContent = '●';
+
+            dot.addEventListener('mousedown', startDrag);
+            dot.addEventListener('touchstart', startDrag, { passive: false });
+        }
+
+        function autoAdvanceLabel() {
+            const currentIdx = LABEL_DEFINITIONS.findIndex(d => d.id === state.activeLabel);
+            for (let i = 1; i <= LABEL_DEFINITIONS.length; i++) {
+                const nextIdx = (currentIdx + i) % LABEL_DEFINITIONS.length;
+                const nextId = LABEL_DEFINITIONS[nextIdx].id;
+                if (!state.labels[nextId]) {
+                    selectLabel(nextId);
+                    return;
+                }
+            }
+        }
+
+        // ============================================================
+        // Drag-and-drop
+        // ============================================================
+        function startDrag(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const dot = e.currentTarget;
+            const labelId = dot.dataset.labelId;
+            const rect = canvas.getBoundingClientRect();
+
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            state.dragging = labelId;
+            dot.classList.add('dragging');
+
+            const dotLeft = parseFloat(dot.style.left);
+            const dotTop = parseFloat(dot.style.top);
+            state.dragOffset = {
+                x: clientX - rect.left - dotLeft,
+                y: clientY - rect.top - dotTop,
+            };
+
+            let moved = false;
+
+            const onMove = (ev) => {
+                ev.preventDefault();
+                moved = true;
+                const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+                const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+
+                let newDisplayX = Math.max(0, Math.min(state.canvasDisplayWidth, cx - rect.left - state.dragOffset.x));
+                let newDisplayY = Math.max(0, Math.min(state.canvasDisplayHeight, cy - rect.top - state.dragOffset.y));
+
+                dot.style.left = newDisplayX + 'px';
+                dot.style.top = newDisplayY + 'px';
+
+                const scaleX = state.imageWidth / state.canvasDisplayWidth;
+                const scaleY = state.imageHeight / state.canvasDisplayHeight;
+                const px = Math.max(0, Math.min(state.imageWidth - 1, Math.round(newDisplayX * scaleX)));
+                const py = Math.max(0, Math.min(state.imageHeight - 1, Math.round(newDisplayY * scaleY)));
+
+                state.labels[labelId].displayX = newDisplayX;
+                state.labels[labelId].displayY = newDisplayY;
+                state.labels[labelId].pixelX = px;
+                state.labels[labelId].pixelY = py;
+
+                document.getElementById(`coords-${labelId}`).textContent = `(${px}, ${py})`;
+                updateJSON();
+            };
+
+            const onEnd = () => {
+                state.dragging = null;
+                dot.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onEnd);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onEnd);
+                if (moved) {
+                    state.justDragged = true;
+                }
+            };
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onEnd);
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onEnd);
+        }
+
+        // ============================================================
+        // Reset
+        // ============================================================
+        resetBtn.addEventListener('click', () => {
+            clearAllLabels();
+            updateJSON();
+            if (LABEL_DEFINITIONS.length > 0) selectLabel(LABEL_DEFINITIONS[0].id);
+            showStatus('info', 'Labels cleared.');
+        });
+
+        function clearAllLabels() {
+            Object.keys(state.labels).forEach(id => {
+                if (state.labels[id].element) state.labels[id].element.remove();
+            });
+            state.labels = {};
+            LABEL_DEFINITIONS.forEach(def => {
+                document.getElementById(`coords-${def.id}`).textContent = '—';
+                document.getElementById(`status-${def.id}`).textContent = '○';
+            });
+        }
+
+        // ============================================================
+        // JSON
+        // ============================================================
+        function buildPayload() {
+            const labels = LABEL_DEFINITIONS.map(def => {
+                const data = state.labels[def.id];
+                return {
+                    id: def.id,
+                    name: def.name,
+                    placed: !!data,
+                    pixel_x: data ? data.pixelX : null,
+                    pixel_y: data ? data.pixelY : null,
+                };
+            });
+
+            return {
+                video_url: VIDEO_URL,
+                frame_index: state.frameIndex,
+                total_frames: state.totalFrames,
+                fps: getFPS(),
+                frame_width: state.imageWidth,
+                frame_height: state.imageHeight,
+                timestamp: new Date().toISOString(),
+                labels,
+            };
+        }
+
+        function updateJSON() {
+            jsonOutput.textContent = JSON.stringify(buildPayload(), null, 2);
+        }
+
+        // ============================================================
+        // Submit
+        // ============================================================
+        submitBtn.addEventListener('click', async () => {
+            const placedCount = Object.keys(state.labels).length;
+            if (placedCount === 0) {
+                showStatus('error', 'No labels placed yet.');
+                return;
+            }
+
+            const url = serverUrlInput.value.trim();
+            if (!url) {
+                showStatus('error', 'Please enter a server URL.');
+                return;
+            }
+
+            const payload = buildPayload();
+            showStatus('info', 'Sending...');
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (response.ok) {
+                    const respText = await response.text();
+                    showStatus('success', `✅ Submitted! Server: ${response.status}. ${respText.substring(0, 100)}`);
+                } else {
+                    showStatus('error', `❌ Server returned ${response.status}: ${response.statusText}`);
+                }
+            } catch (err) {
+                showStatus('error', `❌ Network error: ${err.message}`);
+            }
+        });
+
+        // ============================================================
+        // Status helper
+        // ============================================================
+        function showStatus(type, message) {
+            statusMsg.className = type;
+            statusMsg.textContent = message;
+            statusMsg.style.display = 'block';
+            if (type !== 'error') {
+                setTimeout(() => {
+                    if (statusMsg.textContent === message) statusMsg.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // ============================================================
+        // Init
+        // ============================================================
+        initPalette();
+        updateJSON();
+    </script>
+</body>
+</html>
