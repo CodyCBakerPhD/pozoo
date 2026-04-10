@@ -10,11 +10,45 @@ import traceback
 from functools import wraps
 
 from flask import Flask, request, jsonify
-
+from flasgger import Swagger
 
 from urllib.parse import urlparse
 
 app = Flask(__name__)
+
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": "apispec",
+            "route": "/apispec.json",
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/docs/",
+}
+
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "Annotation Receiver API",
+        "description": "API for receiving and listing video frame annotations.",
+        "version": "1.0.0",
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "Authorization",
+            "description": "Enter: **Bearer <API_SECRET>**",
+        }
+    },
+}
+
+swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
 
 class ValidationError(Exception):
@@ -219,19 +253,168 @@ def require_api_key(f):
 
 @app.route("/", methods=["GET"])
 def health():
-    """Simple health check."""
+    """Simple health check.
+    ---
+    tags:
+      - Health
+    summary: Health check
+    description: Returns the service status.
+    responses:
+      200:
+        description: Service is running
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+            service:
+              type: string
+              example: annotation-receiver
+    """
     return jsonify({"status": "ok", "service": "annotation-receiver"})
 
 
 @app.route("/api/annotations", methods=["POST"])
 @require_api_key
 def receive_annotation():
-    """
-    Receive an annotation payload:
-      1. Parse JSON body.
-      2. Validate schema & semantics.
-      3. Write to the Git repo, commit, push.
-      4. Return result.
+    """Receive and store a video frame annotation.
+    ---
+    tags:
+      - Annotations
+    summary: Submit an annotation
+    description: >
+      Receives a JSON annotation payload, validates it, writes it to the
+      configured Git repository, commits, and pushes.
+    security:
+      - BearerAuth: []
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - video_url
+            - frame_index
+            - total_frames
+            - fps
+            - frame_width
+            - frame_height
+            - timestamp
+            - labels
+          properties:
+            video_url:
+              type: string
+              format: uri
+              example: https://example.com/video.mp4
+            frame_index:
+              type: integer
+              minimum: 0
+              example: 42
+            total_frames:
+              type: integer
+              minimum: 0
+              example: 1000
+            fps:
+              type: number
+              minimum: 0
+              exclusiveMinimum: true
+              example: 30.0
+            frame_width:
+              type: integer
+              minimum: 0
+              example: 1920
+            frame_height:
+              type: integer
+              minimum: 0
+              example: 1080
+            timestamp:
+              type: string
+              format: date-time
+              example: "2024-01-15T12:34:56Z"
+            labels:
+              type: array
+              items:
+                type: object
+                required:
+                  - id
+                  - name
+                  - placed
+                  - pixel_x
+                  - pixel_y
+                properties:
+                  id:
+                    type: string
+                    example: nose
+                  name:
+                    type: string
+                    example: Nose
+                  placed:
+                    type: boolean
+                    example: true
+                  pixel_x:
+                    type: number
+                    nullable: true
+                    example: 540.5
+                  pixel_y:
+                    type: number
+                    nullable: true
+                    example: 320.0
+    responses:
+      201:
+        description: Annotation saved and pushed to the repository
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: pushed
+            filename:
+              type: string
+              example: abc123def456_frame42_1705319696000.json
+            commit_sha:
+              type: string
+              example: a1b2c3d4e5f6
+            pushed_at:
+              type: string
+              format: date-time
+      200:
+        description: Annotation already exists with identical content (no change)
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: no_change
+            message:
+              type: string
+            filename:
+              type: string
+      400:
+        description: Could not parse JSON body
+      401:
+        description: Missing Authorization header
+      403:
+        description: Invalid API key
+      415:
+        description: Content-Type must be application/json
+      422:
+        description: Validation failed
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: Validation failed
+            details:
+              type: array
+              items:
+                type: string
+      500:
+        description: Failed to save annotation to repository
     """
 
     # ---- 1. Parse ----
@@ -282,7 +465,34 @@ def receive_annotation():
 @app.route("/api/annotations", methods=["GET"])
 @require_api_key
 def list_annotations():
-    """List files currently in the annotations directory."""
+    """List annotation files stored in the repository.
+    ---
+    tags:
+      - Annotations
+    summary: List annotation files
+    description: Returns the names of all JSON annotation files currently in the annotations directory.
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: List of annotation filenames
+        schema:
+          type: object
+          properties:
+            count:
+              type: integer
+              example: 3
+            files:
+              type: array
+              items:
+                type: string
+              example:
+                - abc123def456_frame42_1705319696000.json
+      401:
+        description: Missing Authorization header
+      403:
+        description: Invalid API key
+    """
     import os
     from config import Config as C
 
