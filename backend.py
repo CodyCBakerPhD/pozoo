@@ -11,9 +11,7 @@ from functools import wraps
 
 from flask import Flask, request, jsonify
 
-import os
 
-from datetime import datetime
 from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
@@ -108,9 +106,7 @@ def validate_payload(data: dict) -> dict:
             ts = ts[:-1] + "+00:00"
         datetime.fromisoformat(ts)
     except (ValueError, TypeError):
-        errors.append(
-            "'timestamp' must be a valid ISO-8601 datetime string"
-        )
+        errors.append("'timestamp' must be a valid ISO-8601 datetime string")
 
     # ------------------------------------------------------------------
     # 3. Labels array
@@ -146,24 +142,19 @@ def validate_payload(data: dict) -> dict:
         for coord in ("pixel_x", "pixel_y"):
             val = label.get(coord)
             if val is not None and not isinstance(val, (int, float)):
-                errors.append(
-                    f"{prefix}.{coord} must be null or a number"
-                )
+                errors.append(f"{prefix}.{coord} must be null or a number")
 
         # If placed is True, coordinates must be present
         if label.get("placed") is True:
             if label.get("pixel_x") is None or label.get("pixel_y") is None:
                 errors.append(
-                    f"{prefix} is marked as placed but pixel_x/pixel_y "
-                    f"is null"
+                    f"{prefix} is marked as placed but pixel_x/pixel_y " f"is null"
                 )
 
         # If placed is False, coordinates should be null
         if label.get("placed") is False:
             if label.get("pixel_x") is not None or label.get("pixel_y") is not None:
-                errors.append(
-                    f"{prefix} is not placed but has non-null coordinates"
-                )
+                errors.append(f"{prefix} is not placed but has non-null coordinates")
 
     # Check that the expected label IDs are all present
     missing_ids = Config.REQUIRED_LABEL_IDS - seen_ids
@@ -182,11 +173,11 @@ def validate_payload(data: dict) -> dict:
 
     return data
 
+
 class Config:
     # GitHub settings
     GITHUB_REPO_URL = os.environ.get(
-        "GITHUB_REPO_URL",
-        "https://{token}@github.com/yourusername/yourrepo.git"
+        "GITHUB_REPO_URL", "https://{token}@github.com/yourusername/yourrepo.git"
     )
     GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "ghp_xxxxxxxxxxxxxxxxxxxx")
     GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "yourusername")
