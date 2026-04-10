@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
+
 class ValidationError(Exception):
     """Raised when payload validation fails."""
 
