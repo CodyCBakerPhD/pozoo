@@ -5,16 +5,12 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import Config
-
 import logging
 import traceback
 from functools import wraps
 
 from flask import Flask, request, jsonify
 
-from validators import validate_payload, ValidationError
-from git_manager import save_and_push
 
 # ---------------------------------------------------------------------------
 # App setup
