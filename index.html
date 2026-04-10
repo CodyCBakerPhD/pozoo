@@ -231,18 +231,76 @@
             overflow-y: auto;
         }
 
-        .server-config {
-            margin-top: 15px;
+        .config-wheel-wrapper {
+            position: relative;
+            display: inline-block;
         }
 
-        .server-config label {
+        .config-wheel-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            color: #aaa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: color 0.2s, transform 0.3s;
+        }
+
+        .config-wheel-btn:hover {
+            color: #e94560;
+            transform: rotate(30deg);
+        }
+
+        .config-wheel-btn.open {
+            color: #e94560;
+            transform: rotate(90deg);
+        }
+
+        .config-wheel-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        .config-panel {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 14px;
+            min-width: 260px;
+            z-index: 100;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+
+        .config-panel.open {
+            display: block;
+        }
+
+        .config-panel-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #e94560;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .config-panel label {
             font-size: 0.8rem;
             display: block;
             margin-bottom: 4px;
             color: #aaa;
         }
 
-        .server-config input[type="text"] {
+        .config-panel input[type="text"],
+        .config-panel input[type="number"] {
             width: 100%;
             padding: 6px 10px;
             border-radius: 4px;
@@ -251,18 +309,8 @@
             color: #e0e0e0;
             font-size: 0.8rem;
             font-family: monospace;
-        }
-
-        .server-config input[type="number"] {
-            width: 100%;
-            padding: 6px 10px;
-            border-radius: 4px;
-            border: 1px solid #0f3460;
-            background: #0a0a1a;
-            color: #e0e0e0;
-            font-size: 0.8rem;
-            font-family: monospace;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
         }
 
         #statusMsg {
@@ -356,6 +404,20 @@
         <button id="newFrameBtn">🎲 New Random Frame</button>
         <button id="resetBtn">🔄 Reset Labels</button>
         <button id="submitBtn">📤 Submit Labels</button>
+        <div class="config-wheel-wrapper">
+            <button class="config-wheel-btn" id="configWheelBtn" aria-label="Open settings" aria-expanded="false" title="Settings">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.07-2.07a7.07 7.07 0 0 0 .07-.93 7.07 7.07 0 0 0-.07-.93l2-1.56a.48.48 0 0 0 .11-.61l-1.9-3.28a.48.48 0 0 0-.58-.21l-2.36.95a6.93 6.93 0 0 0-1.6-.93l-.36-2.51A.47.47 0 0 0 12 1H8a.47.47 0 0 0-.47.41l-.36 2.51a6.93 6.93 0 0 0-1.6.93L3.21 3.9a.47.47 0 0 0-.58.21L.73 7.38a.47.47 0 0 0 .11.61l2 1.56A7.2 7.2 0 0 0 2.77 10a7.2 7.2 0 0 0 .07.93l-2 1.56a.48.48 0 0 0-.11.61l1.9 3.28a.48.48 0 0 0 .58.21l2.36-.95c.5.35 1.03.64 1.6.93l.36 2.51c.06.24.27.41.52.41h3.8c.25 0 .46-.17.52-.41l.36-2.51a6.93 6.93 0 0 0 1.6-.93l2.36.95c.22.08.47 0 .58-.21l1.9-3.28a.47.47 0 0 0-.11-.61l-2-1.56z"/>
+                </svg>
+            </button>
+            <div class="config-panel" id="configPanel" aria-hidden="true">
+                <div class="config-panel-title">⚙️ Settings</div>
+                <label for="fpsInput">Video FPS (for frame index):</label>
+                <input type="number" id="fpsInput" value="30" min="1" max="240" step="any">
+                <label for="serverUrl">Server Endpoint:</label>
+                <input type="text" id="serverUrl" value="https://your-server.com/api/labels" placeholder="https://your-server.com/api/labels">
+            </div>
+        </div>
     </div>
 
     <!-- Hidden video element used only for extraction -->
@@ -381,13 +443,6 @@
         <div class="sidebar">
             <h2>🏷️ Labels</h2>
             <div class="label-palette" id="labelPalette"></div>
-
-            <div class="server-config">
-                <label for="fpsInput">Video FPS (for frame index):</label>
-                <input type="number" id="fpsInput" value="30" min="1" max="240" step="any">
-                <label for="serverUrl">Server Endpoint:</label>
-                <input type="text" id="serverUrl" value="https://your-server.com/api/labels" placeholder="https://your-server.com/api/labels">
-            </div>
 
             <div class="output-section">
                 <h3>JSON Preview</h3>
@@ -450,6 +505,8 @@
         const newFrameBtn = document.getElementById('newFrameBtn');
         const resetBtn = document.getElementById('resetBtn');
         const submitBtn = document.getElementById('submitBtn');
+        const configWheelBtn = document.getElementById('configWheelBtn');
+        const configPanel = document.getElementById('configPanel');
 
         // ============================================================
         // FPS & frame index helpers
@@ -841,6 +898,27 @@
                 }, 5000);
             }
         }
+
+        // ============================================================
+        // Config wheel toggle
+        // ============================================================
+        configWheelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = configPanel.classList.toggle('open');
+            configWheelBtn.classList.toggle('open', isOpen);
+            configWheelBtn.setAttribute('aria-expanded', isOpen);
+            configPanel.setAttribute('aria-hidden', !isOpen);
+        });
+
+        // Close panel when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!configPanel.contains(e.target) && !configWheelBtn.contains(e.target)) {
+                configPanel.classList.remove('open');
+                configWheelBtn.classList.remove('open');
+                configWheelBtn.setAttribute('aria-expanded', 'false');
+                configPanel.setAttribute('aria-hidden', 'true');
+            }
+        });
 
         // ============================================================
         // Init
