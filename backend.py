@@ -37,7 +37,7 @@ def validate_payload(data: dict) -> dict:
     # ------------------------------------------------------------------
     # 1. Top-level required fields and types
     # ------------------------------------------------------------------
-    required_top = {
+    required_top: dict[str, type | tuple[type, ...]] = {
         "video_url": str,
         "frame_index": int,
         "total_frames": int,
