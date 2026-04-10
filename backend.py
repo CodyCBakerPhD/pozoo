@@ -440,61 +440,7 @@ def save_and_push(data: dict) -> dict:
     }
 
 
-def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
-    """Run a shell command and return the CompletedProcess."""
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    if check and result.returncode != 0:
-        raise RuntimeError(
-            f"Command {cmd} failed (rc={result.returncode}):\n"
-            f"STDOUT: {result.stdout}\n"
-            f"STDERR: {result.stderr}"
-        )
-    return result
 
-
-def ensure_repo() -> str:
-    """
-    Clone the repo with sparse-checkout if it doesn't already exist.
-    Returns the absolute path to the repo.
-    """
-    repo_dir = Config.REPO_DIR
-    data_subdir = Config.DATA_SUBDIR
-
-    if os.path.isdir(os.path.join(repo_dir, ".git")):
-        # Already cloned — make sure sparse-checkout pattern is set and pull
-        _run(
-            ["git", "sparse-checkout", "set", data_subdir],
-            cwd=repo_dir,
-        )
-        _run(
-            ["git", "pull", "--rebase", "origin", Config.GITHUB_BRANCH],
-            cwd=repo_dir,
-            check=False,  # tolerate if nothing to pull
-        )
-        return repo_dir
-
-    # Fresh clone — sparse checkout
-    auth_url = (
-        f"https://{Config.GITHUB_TOKEN}@github.com/"
-        f"{Config.GITHUB_USERNAME}/{_repo_name_from_url()}.git"
-    )
-
-    _run(["git", "clone", "--filter=blob:none", "--no-checkout", auth_url, repo_dir])
-    _run(["git", "sparse-checkout", "init", "--cone"], cwd=repo_dir)
-    _run(["git", "sparse-checkout", "set", data_subdir], cwd=repo_dir)
-    _run(["git", "checkout", Config.GITHUB_BRANCH], cwd=repo_dir)
-
-    # Configure committer identity (required on PythonAnywhere)
-    _run(["git", "config", "user.name", Config.GITHUB_USERNAME], cwd=repo_dir)
-    _run(["git", "config", "user.email", Config.GITHUB_EMAIL], cwd=repo_dir)
-
-    return repo_dir
 
 
 def _repo_name_from_url() -> str:
