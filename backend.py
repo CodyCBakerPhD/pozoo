@@ -11,6 +11,11 @@ from functools import wraps
 
 from flask import Flask, request, jsonify
 
+import os
+
+from datetime import datetime
+from urllib.parse import urlparse
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
@@ -23,6 +28,189 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class ValidationError(Exception):
+    """Raised when payload validation fails."""
+
+    def __init__(self, errors: list[str]):
+        self.errors = errors
+        super().__init__(f"Validation failed: {errors}")
+
+
+def validate_payload(data: dict) -> dict:
+    """
+    Validate and normalise the incoming JSON payload.
+
+    Returns the validated (and lightly cleaned) data dict.
+    Raises ValidationError with a list of human-readable problems.
+    """
+    errors: list[str] = []
+
+    # ------------------------------------------------------------------
+    # 1. Top-level required fields and types
+    # ------------------------------------------------------------------
+    required_top = {
+        "video_url": str,
+        "frame_index": int,
+        "total_frames": int,
+        "fps": (int, float),
+        "frame_width": int,
+        "frame_height": int,
+        "timestamp": str,
+        "labels": list,
+    }
+
+    for field, expected_type in required_top.items():
+        if field not in data:
+            errors.append(f"Missing required field: '{field}'")
+        elif not isinstance(data[field], expected_type):
+            errors.append(
+                f"Field '{field}' must be of type "
+                f"{expected_type}, got {type(data[field]).__name__}"
+            )
+
+    # Stop early if structure is fundamentally broken
+    if errors:
+        raise ValidationError(errors)
+
+    # ------------------------------------------------------------------
+    # 2. Semantic checks on scalars
+    # ------------------------------------------------------------------
+
+    # video_url — must be a valid-looking URL
+    parsed = urlparse(data["video_url"])
+    if parsed.scheme not in ("http", "https"):
+        errors.append("'video_url' must be an http or https URL")
+
+    # frame_index, total_frames — non-negative integers
+    if data["frame_index"] < 0:
+        errors.append("'frame_index' must be >= 0")
+    if data["total_frames"] < 0:
+        errors.append("'total_frames' must be >= 0")
+
+    # fps — positive number
+    if data["fps"] <= 0:
+        errors.append("'fps' must be a positive number")
+
+    # frame dimensions — non-negative
+    if data["frame_width"] < 0:
+        errors.append("'frame_width' must be >= 0")
+    if data["frame_height"] < 0:
+        errors.append("'frame_height' must be >= 0")
+
+    # timestamp — must parse as ISO-8601
+    try:
+        # Python 3.11+ handles the trailing Z; for older versions we
+        # replace it with +00:00
+        ts = data["timestamp"]
+        if ts.endswith("Z"):
+            ts = ts[:-1] + "+00:00"
+        datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        errors.append(
+            "'timestamp' must be a valid ISO-8601 datetime string"
+        )
+
+    # ------------------------------------------------------------------
+    # 3. Labels array
+    # ------------------------------------------------------------------
+    labels = data["labels"]
+    if not labels:
+        errors.append("'labels' array must not be empty")
+
+    seen_ids: set[str] = set()
+    for idx, label in enumerate(labels):
+        prefix = f"labels[{idx}]"
+
+        if not isinstance(label, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+
+        # Required sub-fields
+        for sub_field in ("id", "name", "placed", "pixel_x", "pixel_y"):
+            if sub_field not in label:
+                errors.append(f"{prefix} missing required field '{sub_field}'")
+
+        label_id = label.get("id")
+        if isinstance(label_id, str):
+            if label_id in seen_ids:
+                errors.append(f"{prefix} duplicate label id '{label_id}'")
+            seen_ids.add(label_id)
+
+        # 'placed' must be bool
+        if "placed" in label and not isinstance(label["placed"], bool):
+            errors.append(f"{prefix}.placed must be a boolean")
+
+        # pixel_x / pixel_y — must be null or numeric
+        for coord in ("pixel_x", "pixel_y"):
+            val = label.get(coord)
+            if val is not None and not isinstance(val, (int, float)):
+                errors.append(
+                    f"{prefix}.{coord} must be null or a number"
+                )
+
+        # If placed is True, coordinates must be present
+        if label.get("placed") is True:
+            if label.get("pixel_x") is None or label.get("pixel_y") is None:
+                errors.append(
+                    f"{prefix} is marked as placed but pixel_x/pixel_y "
+                    f"is null"
+                )
+
+        # If placed is False, coordinates should be null
+        if label.get("placed") is False:
+            if label.get("pixel_x") is not None or label.get("pixel_y") is not None:
+                errors.append(
+                    f"{prefix} is not placed but has non-null coordinates"
+                )
+
+    # Check that the expected label IDs are all present
+    missing_ids = Config.REQUIRED_LABEL_IDS - seen_ids
+    if missing_ids:
+        errors.append(f"Missing required label ids: {sorted(missing_ids)}")
+
+    extra_ids = seen_ids - Config.REQUIRED_LABEL_IDS
+    if extra_ids:
+        errors.append(f"Unexpected label ids: {sorted(extra_ids)}")
+
+    # ------------------------------------------------------------------
+    # Done
+    # ------------------------------------------------------------------
+    if errors:
+        raise ValidationError(errors)
+
+    return data
+
+class Config:
+    # GitHub settings
+    GITHUB_REPO_URL = os.environ.get(
+        "GITHUB_REPO_URL",
+        "https://{token}@github.com/yourusername/yourrepo.git"
+    )
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "ghp_xxxxxxxxxxxxxxxxxxxx")
+    GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "yourusername")
+    GITHUB_EMAIL = os.environ.get("GITHUB_EMAIL", "you@example.com")
+    GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+
+    # Paths
+    # PythonAnywhere home directory
+    HOME_DIR = os.path.expanduser("~")
+    REPO_DIR = os.path.join(HOME_DIR, "label-data-repo")
+    DATA_SUBDIR = "annotations"  # subdirectory inside the repo for JSON files
+
+    # Validation
+    REQUIRED_LABEL_IDS = {
+        "left_front_paw",
+        "right_front_paw",
+        "left_hind_paw",
+        "right_hind_paw",
+        "nose",
+        "tail_base",
+    }
+
+    # Auth token for incoming requests (optional but recommended)
+    API_SECRET = os.environ.get("API_SECRET", "change-me-to-a-real-secret")
 
 
 # ---------------------------------------------------------------------------
