@@ -8,7 +8,6 @@ import time
 import traceback
 import typing
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 import flask
@@ -28,8 +27,12 @@ data_namespace = flask_restx.Namespace(name="data", description="API route for d
 api.add_namespace(data_namespace)
 
 contribute_parser = flask_restx.reqparse.RequestParser()
-contribute_parser.add_argument("filename", type=str, required=True, help="Name of the file to upload.")
-contribute_parser.add_argument("test", type=bool, required=False, default=False, help="Test mode flag.")
+contribute_parser.add_argument(
+    "filename", type=str, required=True, help="Name of the file to upload."
+)
+contribute_parser.add_argument(
+    "test", type=bool, required=False, default=False, help="Test mode flag."
+)
 
 
 @data_namespace.route("/contribute")
@@ -73,7 +76,11 @@ class Contribute(flask_restx.Resource):
 
             return 200
         except Exception as exception:
-            return {"type": type(exception).__name__, "error": str(exception), "traceback": traceback.format_exc()}, 500
+            return {
+                "type": type(exception).__name__,
+                "error": str(exception),
+                "traceback": traceback.format_exc(),
+            }, 500
 
 
 @data_namespace.route("/update-database")
@@ -90,8 +97,12 @@ class UpdateDataBase(flask_restx.Resource):
     )
     def post(self) -> int:
         try:
-            directory = Path.home() / ".cache" / "nwb-benchmarks" / "nwb-benchmarks-results"
-            output_directory = Path.home() / ".cache" / "nwb-benchmarks" / "nwb-benchmarks-database"
+            directory = (
+                Path.home() / ".cache" / "nwb-benchmarks" / "nwb-benchmarks-results"
+            )
+            output_directory = (
+                Path.home() / ".cache" / "nwb-benchmarks" / "nwb-benchmarks-database"
+            )
 
             manager = GitHubResultsManager(repo_name="nwb-benchmarks-database")
             result = manager.ensure_repo_up_to_date()
@@ -114,7 +125,11 @@ class UpdateDataBase(flask_restx.Resource):
 
             return 200
         except Exception as exception:
-            return {"type": type(exception).__name__, "error": str(exception), "traceback": traceback.format_exc()}, 500
+            return {
+                "type": type(exception).__name__,
+                "error": str(exception),
+                "traceback": traceback.format_exc(),
+            }, 500
 
 
 class GitHubResultsManager:
@@ -128,7 +143,7 @@ class GitHubResultsManager:
         if not self.repo_path.exists():
             return 521
 
-        command = f"git pull"
+        command = "git pull"
         cwd = self.repo_path
         result = subprocess.run(
             args=command,
@@ -201,12 +216,16 @@ class Machine:
     asv: dict
 
     @classmethod
-    def safe_load_from_json(cls, file_path: pathlib.Path) -> typing_extensions.Self | None:
+    def safe_load_from_json(
+        cls, file_path: pathlib.Path
+    ) -> typing_extensions.Self | None:
         with file_path.open(mode="r") as file_stream:
             data = json.load(file_stream)
 
         version = str(data.get("version", None))
-        if version is None or packaging.version.Version(version) < packaging.version.Version(version="1.1.0"):
+        if version is None or packaging.version.Version(
+            version
+        ) < packaging.version.Version(version="1.1.0"):
             return None
 
         machine_id = file_path.stem.removeprefix("machine-")
@@ -254,7 +273,9 @@ class Environment:
             setattr(self, key, value)
 
     @classmethod
-    def safe_load_from_json(cls, file_path: pathlib.Path) -> typing_extensions.Self | None:
+    def safe_load_from_json(
+        cls, file_path: pathlib.Path
+    ) -> typing_extensions.Self | None:
         with file_path.open(mode="r") as file_stream:
             data = json.load(fp=file_stream)
 
@@ -308,14 +329,16 @@ class Results:
     results: list[Result]
 
     @classmethod
-    def safe_load_from_json(cls, file_path: pathlib.Path) -> typing_extensions.Self | None:
+    def safe_load_from_json(
+        cls, file_path: pathlib.Path
+    ) -> typing_extensions.Self | None:
         with file_path.open(mode="r") as file_stream:
             data = json.load(fp=file_stream)
 
         database_version = data.get("database_version", None)
-        if database_version is None or packaging.version.Version(data["database_version"]) < packaging.version.Version(
-            version="1.0.0"
-        ):
+        if database_version is None or packaging.version.Version(
+            data["database_version"]
+        ) < packaging.version.Version(version="1.0.0"):
             return None
 
         timestamp = data["timestamp"]
@@ -325,7 +348,9 @@ class Results:
 
         results = [
             Result(
-                uuid=str(uuid.uuid4()),  # TODO: add this to each results file so it is persistent
+                uuid=str(
+                    uuid.uuid4()
+                ),  # TODO: add this to each results file so it is persistent
                 version=database_version,
                 timestamp=timestamp,
                 commit_hash=commit_hash,
@@ -359,7 +384,9 @@ class Results:
         return data_frame
 
 
-def repackage_as_parquet(directory: pathlib.Path, output_directory: pathlib.Path) -> None:
+def repackage_as_parquet(
+    directory: pathlib.Path, output_directory: pathlib.Path
+) -> None:
     import polars
 
     # Machines
@@ -373,7 +400,9 @@ def repackage_as_parquet(directory: pathlib.Path, output_directory: pathlib.Path
 
         machine_data_frame = machine.to_dataframe()
         machines_data_frames.append(machine_data_frame)
-    machines_database = polars.concat(items=machines_data_frames, how="diagonal_relaxed")
+    machines_database = polars.concat(
+        items=machines_data_frames, how="diagonal_relaxed"
+    )
 
     machines_database_file_path = output_directory / "machines.parquet"
     machines_database.write_parquet(file=machines_database_file_path)
@@ -389,7 +418,9 @@ def repackage_as_parquet(directory: pathlib.Path, output_directory: pathlib.Path
 
         environment_data_frame = environment.to_dataframe()
         environments_data_frames.append(environment_data_frame)
-    environments_database = polars.concat(items=environments_data_frames, how="diagonal")
+    environments_database = polars.concat(
+        items=environments_data_frames, how="diagonal"
+    )
 
     environments_database_file_path = output_directory / "environments.parquet"
     environments_database.write_parquet(file=environments_database_file_path)
@@ -410,14 +441,10 @@ def repackage_as_parquet(directory: pathlib.Path, output_directory: pathlib.Path
     all_results_database_file_path = output_directory / "results.parquet"
     all_results_database.write_parquet(file=all_results_database_file_path)
 
+
 # ******
 # Pose Zoo testing
 # ******
-
-
-
-
-
 
 
 if __name__ == "__main__":

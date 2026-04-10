@@ -12,21 +12,12 @@ from pathlib import Path
 
 from config import Config
 
-import os
 
 """
 Manages the sparse-checkout Git repository and all write / commit / push
 operations.
 """
 
-import json
-import os
-import subprocess
-import hashlib
-from datetime import datetime, timezone
-from pathlib import Path
-
-from config import Config
 
 
 """
@@ -40,7 +31,6 @@ from functools import wraps
 
 from flask import Flask, request, jsonify
 
-from config import Config
 from validators import validate_payload, ValidationError
 from git_manager import save_and_push
 
@@ -62,6 +52,7 @@ logger = logging.getLogger(__name__)
 # Simple bearer-token auth decorator (optional but recommended)
 # ---------------------------------------------------------------------------
 
+
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -72,12 +63,14 @@ def require_api_key(f):
         if token != Config.API_SECRET:
             return jsonify({"error": "Invalid API key"}), 403
         return f(*args, **kwargs)
+
     return decorated
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.route("/", methods=["GET"])
 def health():
@@ -98,9 +91,7 @@ def receive_annotation():
 
     # ---- 1. Parse ----
     if not request.is_json:
-        return jsonify({
-            "error": "Content-Type must be application/json"
-        }), 415
+        return jsonify({"error": "Content-Type must be application/json"}), 415
 
     data = request.get_json(silent=True)
     if data is None:
@@ -111,10 +102,15 @@ def receive_annotation():
         validated = validate_payload(data)
     except ValidationError as ve:
         logger.warning("Validation failed: %s", ve.errors)
-        return jsonify({
-            "error": "Validation failed",
-            "details": ve.errors,
-        }), 422
+        return (
+            jsonify(
+                {
+                    "error": "Validation failed",
+                    "details": ve.errors,
+                }
+            ),
+            422,
+        )
 
     # ---- 3. Save & Push ----
     try:
@@ -122,10 +118,15 @@ def receive_annotation():
     except Exception:
         tb = traceback.format_exc()
         logger.error("Git operation failed:\n%s", tb)
-        return jsonify({
-            "error": "Failed to save annotation to repository",
-            "details": tb,
-        }), 500
+        return (
+            jsonify(
+                {
+                    "error": "Failed to save annotation to repository",
+                    "details": tb,
+                }
+            ),
+            500,
+        )
 
     # ---- 4. Respond ----
     logger.info("Annotation saved: %s", result)
@@ -154,6 +155,7 @@ def list_annotations():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
     """Run a shell command and return the CompletedProcess."""
@@ -300,11 +302,11 @@ def save_and_push(data: dict) -> dict:
         "pushed_at": now_utc,
     }
 
+
 class Config:
     # GitHub settings
     GITHUB_REPO_URL = os.environ.get(
-        "GITHUB_REPO_URL",
-        "https://{token}@github.com/yourusername/yourrepo.git"
+        "GITHUB_REPO_URL", "https://{token}@github.com/yourusername/yourrepo.git"
     )
     GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "ghp_xxxxxxxxxxxxxxxxxxxx")
     GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "yourusername")
@@ -329,6 +331,7 @@ class Config:
 
     # Auth token for incoming requests (optional but recommended)
     API_SECRET = os.environ.get("API_SECRET", "change-me-to-a-real-secret")
+
 
 def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
     """Run a shell command and return the CompletedProcess."""
