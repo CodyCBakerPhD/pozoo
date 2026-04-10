@@ -440,9 +440,6 @@ def save_and_push(data: dict) -> dict:
     }
 
 
-
-
-
 def _repo_name_from_url() -> str:
     """Extract 'owner/repo' or just 'repo' from the configured URL."""
     url = Config.GITHUB_REPO_URL
