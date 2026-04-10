@@ -14,6 +14,7 @@ from flask import Flask, request, jsonify
 
 from urllib.parse import urlparse
 
+app = Flask(__name__)
 
 class ValidationError(Exception):
     """Raised when payload validation fails."""
@@ -622,8 +623,6 @@ if __name__ == "__main__":
     # ---------------------------------------------------------------------------
     # App setup
     # ---------------------------------------------------------------------------
-
-    app = Flask(__name__)
     app.config.from_object(Config)
 
     logging.basicConfig(
