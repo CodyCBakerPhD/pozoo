@@ -10,7 +10,7 @@ import traceback
 from functools import wraps
 
 from flask import Flask, request
-from flask_restx import Api, Namespace, Resource, fields
+from flask_restx import Api, Resource, fields
 
 from urllib.parse import urlparse
 
@@ -267,9 +267,7 @@ annotation_input_model = api.model(
         "fps": fields.Float(required=True, example=30.0),
         "frame_width": fields.Integer(required=True, min=0, example=1920),
         "frame_height": fields.Integer(required=True, min=0, example=1080),
-        "timestamp": fields.String(
-            required=True, example="2024-01-15T12:34:56Z"
-        ),
+        "timestamp": fields.String(required=True, example="2024-01-15T12:34:56Z"),
         "labels": fields.List(fields.Nested(label_model), required=True),
     },
 )
@@ -278,9 +276,7 @@ annotation_saved_model = api.model(
     "AnnotationSaved",
     {
         "status": fields.String(example="pushed"),
-        "filename": fields.String(
-            example="abc123def456_frame42_1705319696000.json"
-        ),
+        "filename": fields.String(example="abc123def456_frame42_1705319696000.json"),
         "commit_sha": fields.String(example="a1b2c3d4e5f6"),
         "pushed_at": fields.String(example="2024-01-15T12:34:56+00:00"),
     },
