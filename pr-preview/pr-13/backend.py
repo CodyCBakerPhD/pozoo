@@ -9,46 +9,41 @@ import logging
 import traceback
 from functools import wraps
 
-from flask import Flask, request, jsonify
-from flasgger import Swagger
+from flask import Flask, request
+from flask_restx import Api, Namespace, Resource, fields
 
 from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-swagger_config = {
-    "headers": [],
-    "specs": [
-        {
-            "endpoint": "apispec",
-            "route": "/apispec.json",
-            "rule_filter": lambda rule: True,
-            "model_filter": lambda tag: True,
-        }
-    ],
-    "static_url_path": "/flasgger_static",
-    "swagger_ui": True,
-    "specs_route": "/docs/",
-}
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
-swagger_template = {
-    "swagger": "2.0",
-    "info": {
-        "title": "Annotation Receiver API",
-        "description": "API for receiving and listing video frame annotations.",
-        "version": "1.0.0",
-    },
-    "securityDefinitions": {
+api = Api(
+    app,
+    version="1.0.0",
+    title="Annotation Receiver API",
+    description="API for receiving and listing video frame annotations.",
+    doc="/docs/",
+    authorizations={
         "BearerAuth": {
             "type": "apiKey",
             "in": "header",
             "name": "Authorization",
-            "description": "Enter: **Bearer <API_SECRET>**",
+            "description": "Enter: Bearer &lt;API_SECRET&gt;",
         }
     },
-}
+)
 
-swagger = Swagger(app, config=swagger_config, template=swagger_template)
+health_ns = api.namespace("health", path="/health", description="Service health")
+annotations_ns = api.namespace(
+    "annotations",
+    path="/api",
+    description="Annotation operations",
+)
 
 
 class ValidationError(Exception):
@@ -237,271 +232,159 @@ def require_api_key(f):
     def decorated(*args, **kwargs):
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
-            return jsonify({"error": "Missing Authorization header"}), 401
+            api.abort(401, "Missing Authorization header")
         token = auth.split(" ", 1)[1]
         if token != Config.API_SECRET:
-            return jsonify({"error": "Invalid API key"}), 403
+            api.abort(403, "Invalid API key")
         return f(*args, **kwargs)
 
     return decorated
 
 
 # ---------------------------------------------------------------------------
+# API models
+# ---------------------------------------------------------------------------
+
+label_model = api.model(
+    "Label",
+    {
+        "id": fields.String(required=True, example="nose"),
+        "name": fields.String(required=True, example="Nose"),
+        "placed": fields.Boolean(required=True, example=True),
+        "pixel_x": fields.Float(required=True, allow_null=True, example=540.5),
+        "pixel_y": fields.Float(required=True, allow_null=True, example=320.0),
+    },
+)
+
+annotation_input_model = api.model(
+    "AnnotationInput",
+    {
+        "video_url": fields.String(
+            required=True, example="https://example.com/video.mp4"
+        ),
+        "frame_index": fields.Integer(required=True, min=0, example=42),
+        "total_frames": fields.Integer(required=True, min=0, example=1000),
+        "fps": fields.Float(required=True, example=30.0),
+        "frame_width": fields.Integer(required=True, min=0, example=1920),
+        "frame_height": fields.Integer(required=True, min=0, example=1080),
+        "timestamp": fields.String(
+            required=True, example="2024-01-15T12:34:56Z"
+        ),
+        "labels": fields.List(fields.Nested(label_model), required=True),
+    },
+)
+
+annotation_saved_model = api.model(
+    "AnnotationSaved",
+    {
+        "status": fields.String(example="pushed"),
+        "filename": fields.String(
+            example="abc123def456_frame42_1705319696000.json"
+        ),
+        "commit_sha": fields.String(example="a1b2c3d4e5f6"),
+        "pushed_at": fields.String(example="2024-01-15T12:34:56+00:00"),
+    },
+)
+
+annotation_no_change_model = api.model(
+    "AnnotationNoChange",
+    {
+        "status": fields.String(example="no_change"),
+        "message": fields.String(),
+        "filename": fields.String(),
+    },
+)
+
+annotation_list_model = api.model(
+    "AnnotationList",
+    {
+        "count": fields.Integer(example=3),
+        "files": fields.List(
+            fields.String(),
+            example=["abc123def456_frame42_1705319696000.json"],
+        ),
+    },
+)
+
+validation_error_model = api.model(
+    "ValidationError",
+    {
+        "error": fields.String(example="Validation failed"),
+        "details": fields.List(fields.String()),
+    },
+)
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 
-@app.route("/", methods=["GET"])
-def health():
-    """Simple health check.
-    ---
-    tags:
-      - Health
-    summary: Health check
-    description: Returns the service status.
-    responses:
-      200:
-        description: Service is running
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: ok
-            service:
-              type: string
-              example: annotation-receiver
-    """
-    return jsonify({"status": "ok", "service": "annotation-receiver"})
+@health_ns.route("")
+class Health(Resource):
+    def get(self):
+        """Simple health check — returns the service status."""
+        return {"status": "ok", "service": "annotation-receiver"}
 
 
-@app.route("/api/annotations", methods=["POST"])
-@require_api_key
-def receive_annotation():
-    """Receive and store a video frame annotation.
-    ---
-    tags:
-      - Annotations
-    summary: Submit an annotation
-    description: >
-      Receives a JSON annotation payload, validates it, writes it to the
-      configured Git repository, commits, and pushes.
-    security:
-      - BearerAuth: []
-    consumes:
-      - application/json
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - video_url
-            - frame_index
-            - total_frames
-            - fps
-            - frame_width
-            - frame_height
-            - timestamp
-            - labels
-          properties:
-            video_url:
-              type: string
-              format: uri
-              example: https://example.com/video.mp4
-            frame_index:
-              type: integer
-              minimum: 0
-              example: 42
-            total_frames:
-              type: integer
-              minimum: 0
-              example: 1000
-            fps:
-              type: number
-              minimum: 0
-              exclusiveMinimum: true
-              example: 30.0
-            frame_width:
-              type: integer
-              minimum: 0
-              example: 1920
-            frame_height:
-              type: integer
-              minimum: 0
-              example: 1080
-            timestamp:
-              type: string
-              format: date-time
-              example: "2024-01-15T12:34:56Z"
-            labels:
-              type: array
-              items:
-                type: object
-                required:
-                  - id
-                  - name
-                  - placed
-                  - pixel_x
-                  - pixel_y
-                properties:
-                  id:
-                    type: string
-                    example: nose
-                  name:
-                    type: string
-                    example: Nose
-                  placed:
-                    type: boolean
-                    example: true
-                  pixel_x:
-                    type: number
-                    nullable: true
-                    example: 540.5
-                  pixel_y:
-                    type: number
-                    nullable: true
-                    example: 320.0
-    responses:
-      201:
-        description: Annotation saved and pushed to the repository
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: pushed
-            filename:
-              type: string
-              example: abc123def456_frame42_1705319696000.json
-            commit_sha:
-              type: string
-              example: a1b2c3d4e5f6
-            pushed_at:
-              type: string
-              format: date-time
-      200:
-        description: Annotation already exists with identical content (no change)
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: no_change
-            message:
-              type: string
-            filename:
-              type: string
-      400:
-        description: Could not parse JSON body
-      401:
-        description: Missing Authorization header
-      403:
-        description: Invalid API key
-      415:
-        description: Content-Type must be application/json
-      422:
-        description: Validation failed
-        schema:
-          type: object
-          properties:
-            error:
-              type: string
-              example: Validation failed
-            details:
-              type: array
-              items:
-                type: string
-      500:
-        description: Failed to save annotation to repository
-    """
+@annotations_ns.route("/annotations")
+@annotations_ns.doc(security="BearerAuth")
+class AnnotationList(Resource):
+    @annotations_ns.response(200, "Success", annotation_list_model)
+    @annotations_ns.response(401, "Missing Authorization header")
+    @annotations_ns.response(403, "Invalid API key")
+    @require_api_key
+    def get(self):
+        """List annotation files stored in the repository."""
+        target = os.path.join(Config.REPO_DIR, Config.DATA_SUBDIR)
+        if not os.path.isdir(target):
+            return {"count": 0, "files": []}
 
-    # ---- 1. Parse ----
-    if not request.is_json:
-        return jsonify({"error": "Content-Type must be application/json"}), 415
+        files = sorted(f for f in os.listdir(target) if f.endswith(".json"))
+        return {"count": len(files), "files": files}
 
-    data = request.get_json(silent=True)
-    if data is None:
-        return jsonify({"error": "Could not parse JSON body"}), 400
+    @annotations_ns.expect(annotation_input_model)
+    @annotations_ns.response(201, "Annotation saved", annotation_saved_model)
+    @annotations_ns.response(200, "No change", annotation_no_change_model)
+    @annotations_ns.response(400, "Could not parse JSON body")
+    @annotations_ns.response(401, "Missing Authorization header")
+    @annotations_ns.response(403, "Invalid API key")
+    @annotations_ns.response(415, "Content-Type must be application/json")
+    @annotations_ns.response(422, "Validation failed", validation_error_model)
+    @annotations_ns.response(500, "Failed to save annotation to repository")
+    @require_api_key
+    def post(self):
+        """Receive and store a video frame annotation."""
 
-    # ---- 2. Validate ----
-    try:
-        validated = validate_payload(data)
-    except ValidationError as ve:
-        logger.warning("Validation failed: %s", ve.errors)
-        return (
-            jsonify(
-                {
-                    "error": "Validation failed",
-                    "details": ve.errors,
-                }
-            ),
-            422,
-        )
+        # ---- 1. Parse ----
+        if not request.is_json:
+            api.abort(415, "Content-Type must be application/json")
 
-    # ---- 3. Save & Push ----
-    try:
-        result = save_and_push(validated)
-    except Exception:
-        tb = traceback.format_exc()
-        logger.error("Git operation failed:\n%s", tb)
-        return (
-            jsonify(
-                {
-                    "error": "Failed to save annotation to repository",
-                    "details": tb,
-                }
-            ),
-            500,
-        )
+        data = request.get_json(silent=True)
+        if data is None:
+            api.abort(400, "Could not parse JSON body")
 
-    # ---- 4. Respond ----
-    logger.info("Annotation saved: %s", result)
-    status_code = 200 if result["status"] == "no_change" else 201
-    return jsonify(result), status_code
+        # ---- 2. Validate ----
+        try:
+            validated = validate_payload(data)
+        except ValidationError as ve:
+            logger.warning("Validation failed: %s", ve.errors)
+            return {"error": "Validation failed", "details": ve.errors}, 422
 
+        # ---- 3. Save & Push ----
+        try:
+            result = save_and_push(validated)
+        except Exception:
+            tb = traceback.format_exc()
+            logger.error("Git operation failed:\n%s", tb)
+            return {
+                "error": "Failed to save annotation to repository",
+                "details": tb,
+            }, 500
 
-@app.route("/api/annotations", methods=["GET"])
-@require_api_key
-def list_annotations():
-    """List annotation files stored in the repository.
-    ---
-    tags:
-      - Annotations
-    summary: List annotation files
-    description: Returns the names of all JSON annotation files currently in the annotations directory.
-    security:
-      - BearerAuth: []
-    responses:
-      200:
-        description: List of annotation filenames
-        schema:
-          type: object
-          properties:
-            count:
-              type: integer
-              example: 3
-            files:
-              type: array
-              items:
-                type: string
-              example:
-                - abc123def456_frame42_1705319696000.json
-      401:
-        description: Missing Authorization header
-      403:
-        description: Invalid API key
-    """
-    import os
-    from config import Config as C
-
-    target = os.path.join(C.REPO_DIR, C.DATA_SUBDIR)
-    if not os.path.isdir(target):
-        return jsonify({"files": []})
-
-    files = sorted(f for f in os.listdir(target) if f.endswith(".json"))
-    return jsonify({"count": len(files), "files": files})
+        # ---- 4. Respond ----
+        logger.info("Annotation saved: %s", result)
+        status_code = 200 if result["status"] == "no_change" else 201
+        return result, status_code
 
 
 def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
@@ -655,15 +538,5 @@ def save_and_push(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # ---------------------------------------------------------------------------
-    # App setup
-    # ---------------------------------------------------------------------------
     app.config.from_object(Config)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger = logging.getLogger(__name__)
-
     app.run(debug=True, port=5000)
