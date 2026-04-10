@@ -439,6 +439,7 @@ def save_and_push(data: dict) -> dict:
         "pushed_at": now_utc,
     }
 
+
 def _run(cmd: list[str], cwd: str | None = None, check: bool = True):
     """Run a shell command and return the CompletedProcess."""
     result = subprocess.run(
