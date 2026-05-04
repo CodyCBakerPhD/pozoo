@@ -9,6 +9,8 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -17,6 +19,6 @@ jobs:
       - name: Reset gh-pages to latest main
         run: |
           git fetch origin
-          git checkout gh-pages
+          git checkout -B gh-pages origin/gh-pages || git checkout -b gh-pages origin/main
           git reset --hard origin/main
           git push origin gh-pages --force
